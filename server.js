@@ -169,4 +169,13 @@ patient.post('/cases/:id/esign/confirm', findOwn, (req, res) => {
 app.use('/api/patient', patient);
 
 app.use((err, req, res, next) => res.status(400).json({ error: err.message }));
-app.listen(PORT, '127.0.0.1', () => console.log(`MedPay Instant running at http://localhost:${PORT}\n  Staff portal:   http://localhost:${PORT}/staff/\n  Patient portal: http://localhost:${PORT}/patient/`));
+{PORT}\n  Staff portal:   http://localhost:${PORT}/staff/\n  Patient portal: http://localhost:${PORT}/patient/`));
+// Keep local development working with npm start
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3006;
+  app.listen(PORT, () => {
+    console.log(`Server running at http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

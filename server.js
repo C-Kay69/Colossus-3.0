@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -166,7 +166,6 @@ patient.post('/cases/:id/esign/confirm', findOwn, (req, res) => {
   const err = checkOtp('esign:' + req.c.id + ':' + req.user.contact, req.body.otp); if (err) return res.status(400).json({ error: err });
   req.c.status = 'disbursed'; req.c.disbursedAt = Date.now(); save(); res.json(req.c);
 });
-app.use('/api/patient', patient);
 if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 3006;
   app.listen(PORT, () => {

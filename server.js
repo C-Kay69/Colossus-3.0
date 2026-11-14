@@ -167,9 +167,6 @@ patient.post('/cases/:id/esign/confirm', findOwn, (req, res) => {
   req.c.status = 'disbursed'; req.c.disbursedAt = Date.now(); save(); res.json(req.c);
 });
 app.use('/api/patient', patient);
-
-app.use((err, req, res, next) => res.status(400).json({ error: err.message }));
-{PORT}\n  Staff portal:   http://localhost:${PORT}/staff/\n  Patient portal: http://localhost:${PORT}/patient/`));
 if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 3006;
   app.listen(PORT, () => {

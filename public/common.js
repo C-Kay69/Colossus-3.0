@@ -25,14 +25,17 @@ const readOtp = cls => [...document.querySelectorAll('.' + cls)].map(i => i.valu
 
 // Sign-in overlay (one per portal; the role decides which API it talks to)
 function mountLogin({ role, title, blurb, side, placeholder, onSuccess }) {
+  const canRegister = role === 'patient';
   $('authOverlay').innerHTML = `<div class="bg-cream w-full max-w-3xl rounded-3xl shadow-2xl border border-stone-300 overflow-hidden grid grid-cols-1 md:grid-cols-5 my-auto">
     <div class="md:col-span-2 ${side} text-white p-8 flex flex-col justify-between gap-8">
       <div><p class="text-xl font-extrabold">MedPay <span class="text-emerald-300">Instant</span></p><p class="text-[11px] text-white/80">RBI Compliant Healthcare Gap Financing</p>
         <h1 class="text-xl font-bold leading-snug mt-6">${title}</h1><p class="text-xs text-white/85 mt-3">${blurb}</p></div>
       <a href="/" class="text-[11px] underline text-white/80">← Switch portal</a></div>
     <div class="md:col-span-3 p-6 sm:p-8 space-y-5">
-      <div><span class="text-[11px] font-bold uppercase tracking-wider text-brand">Secure ${role === 'staff' ? 'Hospital Staff' : 'Patient'} Access</span><h2 class="text-xl font-bold text-stone-900">Sign in</h2></div>
+      <div class="flex items-center justify-between gap-3"><div><span class="text-[11px] font-bold uppercase tracking-wider text-brand">Secure ${role === 'staff' ? 'Hospital Staff' : 'Patient'} Access</span><h2 id="authTitle" class="text-xl font-bold text-stone-900">Sign in</h2></div>
+        ${canRegister ? '<button type="button" id="authModeBtn" class="text-xs font-semibold text-brand underline">Create patient login</button>' : ''}</div>
       <p id="authNote" class="hidden text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2.5"></p>
+      ${canRegister ? '<div id="authNameWrap" class="hidden"><label class="lbl" for="authName">Patient full name</label><input id="authName" class="inp !py-2.5 !text-sm" autocomplete="name"></div>' : ''}
       <div><label class="lbl" for="authContact">Registered email or 10-digit mobile</label>
         <div class="flex gap-2"><input id="authContact" class="inp !py-2.5 !text-sm" placeholder="${placeholder}" autocomplete="off"><button type="button" id="sendOtpBtn" class="btn whitespace-nowrap">Send OTP</button></div></div>
       <div id="otpSection" class="hidden p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-3">
@@ -41,12 +44,23 @@ function mountLogin({ role, title, blurb, side, placeholder, onSuccess }) {
         <div class="flex items-center justify-between gap-3 flex-wrap"><div class="flex gap-2">${otpBoxes('authOtp')}</div><button type="button" id="verifyBtn" class="btn">Verify &amp; Enter</button></div></div>
       <p id="authErr" class="hidden text-xs font-semibold text-rose-600"></p></div></div>`;
   const err = m => { $('authErr').textContent = m || ''; $('authErr').classList.toggle('hidden', !m); };
-  $('sendOtpBtn').onclick = async () => { err(''); try { await api(`/api/auth/${role}/send`, jsonOpts('POST', { contact: $('authContact').value })); $('otpSection').classList.remove('hidden'); $('sendOtpBtn').textContent = 'Resend OTP'; document.querySelector('.authOtp').focus(); } catch (e) { err(e.message); } };
+  let registering = false;
+  if (canRegister) $('authModeBtn').onclick = () => {
+    registering = !registering;
+    $('authTitle').textContent = registering ? 'Create patient login' : 'Sign in';
+    $('authModeBtn').textContent = registering ? 'Back to sign in' : 'Create patient login';
+    $('authNameWrap').classList.toggle('hidden', !registering);
+    $('sendOtpBtn').textContent = registering ? 'Create login & send OTP' : 'Send OTP';
+    $('otpSection').classList.add('hidden');
+    document.querySelectorAll('.authOtp').forEach(i => (i.value = ''));
+    err('');
+  };
+  $('sendOtpBtn').onclick = async () => { err(''); try { await api(`/api/auth/${role}/send`, jsonOpts('POST', { contact: $('authContact').value, name: canRegister && registering ? $('authName').value : '', register: registering })); $('otpSection').classList.remove('hidden'); $('sendOtpBtn').textContent = 'Resend OTP'; document.querySelector('.authOtp').focus(); } catch (e) { err(e.message); } };
   $('verifyBtn').onclick = async () => {
     const otp = readOtp('authOtp'); if (otp.length < 4) return err('Enter all 4 digits of the OTP.');
-    try { const r = await api(`/api/auth/${role}/verify`, jsonOpts('POST', { contact: $('authContact').value, otp })); $('authOverlay').classList.add('hidden'); err(''); onSuccess(r, $('authContact').value.trim()); } catch (e) { err(e.message); }
+    try { const r = await api(`/api/auth/${role}/verify`, jsonOpts('POST', { contact: $('authContact').value, otp, name: canRegister && registering ? $('authName').value : '', register: registering })); $('authOverlay').classList.add('hidden'); err(''); onSuccess(r, $('authContact').value.trim()); } catch (e) { err(e.message); }
   };
-  return { show(note) { $('authContact').value = ''; $('otpSection').classList.add('hidden'); $('sendOtpBtn').textContent = 'Send OTP'; document.querySelectorAll('.authOtp').forEach(i => (i.value = '')); err('');
+  return { show(note) { registering = false; if (canRegister) { $('authTitle').textContent = 'Sign in'; $('authModeBtn').textContent = 'Create patient login'; $('authNameWrap').classList.add('hidden'); $('authName').value = ''; } $('authContact').value = ''; $('otpSection').classList.add('hidden'); $('sendOtpBtn').textContent = 'Send OTP'; document.querySelectorAll('.authOtp').forEach(i => (i.value = '')); err('');
     $('authNote').textContent = note || ''; $('authNote').classList.toggle('hidden', !note); $('authOverlay').classList.remove('hidden'); } };
 }
 

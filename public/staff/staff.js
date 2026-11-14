@@ -1,5 +1,5 @@
 /* Hospital Staff Portal: registry, billing audit, document publishing, bed release. */
-const T = { cases: [], staff: [], id: null, tab: 'dir', filter: 'all', q: '', user: null };
+const T = { cases: [], staff: [], patients: [], id: null, tab: 'dir', filter: 'all', q: '', user: null };
 const cur = () => T.cases.find(c => c.id === T.id);
 const dom = c => MP.DOMAINS.find(d => d.key === c.domain);
 document.body.insertAdjacentHTML('beforeend', DOC_MODAL);
@@ -12,7 +12,7 @@ async function showLogin() { let note = ''; try { if ((await api('/api/auth/staf
 async function signOut(silent) { try { await api('/api/auth/staff/logout', jsonOpts('POST')); } catch (_) {} T.cases = []; T.id = null; showLogin(); if (!silent) toast('Signed out'); }
 async function start(user) {
   T.user = user; $('who').textContent = `${user.name} • ${user.contact}`;
-  await Promise.all([api('/api/staff/cases').then(r => (T.cases = r.map(MP.normalize))), api('/api/staff/staff').then(r => (T.staff = r))]).catch(fail);
+  await Promise.all([api('/api/staff/cases').then(r => (T.cases = r.map(MP.normalize))), api('/api/staff/staff').then(r => (T.staff = r)), api('/api/staff/patients').then(r => (T.patients = r))]).catch(fail);
   T.id = T.cases[0]?.id || null; setTab('dir');
 }
 api('/api/auth/staff/me').then(start).catch(showLogin);
@@ -45,13 +45,18 @@ function renderDir() {
       <td class="p-3">${esc(MP.basis(c))}<p class="text-[11px] text-stone-500">Claim: ${esc(c.claimId) || '—'}</p></td><td class="p-3 text-right"><p class="text-[11px] text-stone-500">${inr(c.bill.total)} | ${inr(c.bill.tpa)}</p><p class="text-sm font-extrabold">${inr(MP.gapOf(c))}</p></td>
       <td class="p-3 text-center">${stage(c)}${MP.billReady(c) ? '' : '<p class="text-[10px] text-amber-700 mt-1">Bill / TPA not published</p>'}</td>
       <td class="p-3 text-right whitespace-nowrap"><button class="btn-dark" onclick="inspect('${c.id}')">Inspect &amp; Audit</button> <button class="text-[11px] text-rose-600 underline cursor-pointer ml-1" onclick="delCase('${c.id}')">Delete</button></td></tr>`).join('') || '<tr><td colspan="7" class="p-6 text-center text-stone-500">No inpatients registered yet.</td></tr>'}</tbody></table>`;
+  $('loginPatientTable').innerHTML = `<table class="w-full text-left text-xs"><thead><tr class="bg-stone-200/60 text-stone-600"><th class="p-3">Patient name</th><th class="p-3">Login email / mobile</th><th class="p-3">Admission</th><th class="p-3">Login created</th></tr></thead>
+    <tbody class="divide-y divide-stone-300/70">${T.patients.map(p => {
+      const admitted = T.cases.some(c => MP.normContact(c.contact) === MP.normContact(p.contact));
+      return `<tr><td class="p-3 font-bold">${esc(p.name)}</td><td class="p-3 font-mono">${esc(p.contact)}</td><td class="p-3">${admitted ? '<span class="tag bg-emerald-100 text-emerald-800">Admission linked</span>' : '<span class="tag bg-amber-100 text-amber-800">Awaiting admission</span>'}</td><td class="p-3">${p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}</td></tr>`;
+    }).join('') || '<tr><td colspan="4" class="p-6 text-center text-stone-500">No patient logins created yet.</td></tr>'}</tbody></table>`;
   $('staffTable').innerHTML = `<table class="w-full text-left text-xs"><thead><tr class="bg-stone-200/60 text-stone-600"><th class="p-3">Staff name</th><th class="p-3">Designation &amp; desk</th><th class="p-3">Registered email / mobile</th><th class="p-3">Access</th><th class="p-3"></th></tr></thead>
     <tbody class="divide-y divide-stone-300/70">${T.staff.map(s => `<tr><td class="p-3 font-bold">${esc(s.name)}</td><td class="p-3">${esc(s.designation)}</td><td class="p-3 font-mono">${esc(s.contact)}</td><td class="p-3"><span class="tag bg-emerald-100 text-emerald-800">Full hospital master DB access</span></td><td class="p-3 text-right"><button class="text-[11px] text-rose-600 underline cursor-pointer" onclick="delStaff('${s.id}')">Remove</button></td></tr>`).join('')}</tbody></table>`;
 }
 async function registerPatient() {
   const v = id => $(id).value.trim();
   try { const c = MP.normalize(await api('/api/staff/cases', jsonOpts('POST', { name: v('rName'), contact: v('rContact'), uhid: v('rUhid'), claimId: v('rClaim'), bed: v('rBed') })));
-    T.cases.push(c); ['rName', 'rContact', 'rUhid', 'rClaim', 'rBed'].forEach(i => ($(i).value = '')); toast('Inpatient registered. The patient can now sign in to the Patient Portal.'); inspect(c.id); } catch (e) { fail(e); }
+    T.cases.push(c); T.patients = await api('/api/staff/patients'); ['rName', 'rContact', 'rUhid', 'rClaim', 'rBed'].forEach(i => ($(i).value = '')); toast('Inpatient registered. A patient login is available for this contact.'); renderDir(); inspect(c.id); } catch (e) { fail(e); }
 }
 async function delCase(id) { if (!confirm('Delete this inpatient record and all documents?')) return; try { await api('/api/staff/cases/' + id, { method: 'DELETE' }); T.cases = T.cases.filter(c => c.id !== id); if (T.id === id) T.id = T.cases[0]?.id || null; renderDir(); } catch (e) { fail(e); } }
 async function addStaff() {

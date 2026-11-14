@@ -17,7 +17,7 @@
 <main class="max-w-7xl mx-auto px-4 sm:px-6 mt-5 space-y-6">
   <section id="tabDir" class="space-y-6">
     <div id="kpis" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
-    <div class="card space-y-3"><div><h2 class="text-sm font-bold">Register a New Inpatient</h2><p class="text-xs text-stone-500">The patient uses the mobile / email entered here to sign in to the Patient Portal.</p></div>
+    <div class="card space-y-3"><div><h2 class="text-sm font-bold">Register a New Inpatient</h2><p class="text-xs text-stone-500">Patients can create their own login in the Patient Portal. Register an admission here only when hospital billing and discharge details are ready; this also creates a login if needed.</p></div>
       <div class="grid grid-cols-1 sm:grid-cols-6 gap-3 items-end">
         <div class="sm:col-span-2"><label class="lbl">Patient full name</label><input id="rName" class="inp"></div>
         <div><label class="lbl">Patient mobile / email</label><input id="rContact" class="inp" placeholder="98XXXXXXXX"></div>
@@ -27,6 +27,7 @@
       <button class="btn" onclick="registerPatient()">+ Register inpatient &amp; open audit</button></div>
     <div class="card space-y-3"><div><span class="tag bg-stone-800 text-white">Staff Master Database</span><h2 class="text-sm font-bold mt-1">Registered Inpatient Discharge &amp; Credit Records</h2>
       <p class="text-xs text-stone-500">Staff do not fill in patient KYC forms. Inspect dossiers, view documents and release beds.</p></div><div id="patientTable" class="overflow-x-auto border border-stone-300 rounded-xl bg-white/40"></div></div>
+    <div class="card space-y-3"><div><h2 class="text-sm font-bold">Patient Login Master Directory</h2><p class="text-xs text-stone-500">Patient logins are created in the Patient Portal and appear here automatically. Patient records linked to an admission are marked below.</p></div><div id="loginPatientTable" class="overflow-x-auto border border-stone-300 rounded-xl bg-white/40"></div></div>
     <div class="card space-y-3"><h3 class="text-sm font-bold">Authorized Hospital Staff Accounts</h3><div id="staffTable" class="overflow-x-auto border border-stone-300 rounded-xl bg-white/40"></div>
       <div class="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end"><div><label class="lbl">Staff name</label><input id="sName" class="inp"></div><div><label class="lbl">Designation &amp; desk</label><input id="sDesig" class="inp"></div><div><label class="lbl">Email / mobile</label><input id="sContact" class="inp"></div><button class="btn" onclick="addStaff()">+ Add staff account</button></div></div>
   </section>

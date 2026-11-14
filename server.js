@@ -5,16 +5,15 @@ const fs = require('fs');
 const crypto = require('crypto');
 const MP = require('./public/shared.js');
 
-const PORT = process.env.PORT || 3000;
 const DATA = path.join(__dirname, 'data'), UPLOADS = path.join(__dirname, 'uploads'), DBFILE = path.join(DATA, 'db.json');
 [DATA, UPLOADS].forEach(d => fs.mkdirSync(d, { recursive: true }));
 
 // ---------- storage ----------
-let db = { cases: [], staff: [] };
+let db = { cases: [], staff: [], patients: [] };
 if (fs.existsSync(DBFILE)) {
   const raw = JSON.parse(fs.readFileSync(DBFILE, 'utf8'));
   if (Array.isArray(raw)) fs.renameSync(DBFILE, path.join(DATA, 'db.v1-backup.json'));   // old single-portal format
-  else db = { cases: (raw.cases || []).map(MP.normalize), staff: raw.staff || [] };
+  else db = { cases: (raw.cases || []).map(MP.normalize), staff: raw.staff || [], patients: raw.patients || [] };
 }
 (process.env.STAFF_CONTACTS || '').split(',').map(s => s.trim()).filter(Boolean).forEach(c => {
   if (!db.staff.some(s => MP.normContact(s.contact) === MP.normContact(c))) db.staff.push({ id: crypto.randomUUID().slice(0, 8), name: 'Hospital Staff', designation: 'Billing Desk', contact: c });
@@ -41,6 +40,23 @@ function checkOtp(key, code) {
   otps.delete(key); return null;
 }
 const validContact = k => /^[6-9]\d{9}$/.test(k) || /^\S+@\S+\.\S+$/.test(k);
+function ensurePatient(name, contact) {
+  const key = MP.normContact(contact);
+  let patient = db.patients.find(p => MP.normContact(p.contact) === key);
+  if (!patient) {
+    patient = { id: crypto.randomUUID().slice(0, 8), name: String(name || '').trim(), contact: String(contact).trim(), createdAt: Date.now() };
+    db.patients.push(patient);
+  }
+  return patient;
+}
+let seededPatients = false;
+db.cases.forEach(c => {
+  if (validContact(MP.normContact(c.contact)) && !db.patients.some(p => MP.normContact(p.contact) === MP.normContact(c.contact))) {
+    ensurePatient(c.name, c.contact);
+    seededPatients = true;
+  }
+});
+if (seededPatients) save();
 
 const app = express();
 app.use(express.json());
@@ -49,22 +65,39 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ---------- auth ----------
 app.get('/api/auth/staff/status', (req, res) => res.json({ setup: db.staff.length === 0 }));
 app.post('/api/auth/:role/send', (req, res) => {
-  const { role } = req.params, key = MP.normContact(req.body.contact);
+  const { role } = req.params, key = MP.normContact(req.body.contact), registering = role === 'patient' && req.body.register === true;
   if (!['staff', 'patient'].includes(role)) return res.status(404).end();
   if (!validContact(key)) return res.status(400).json({ error: 'Enter a valid email or 10-digit mobile number.' });
+  if (registering && !String(req.body.name || '').trim()) return res.status(400).json({ error: 'Enter your full name to create a patient login.' });
   if (role === 'staff' && db.staff.length && !db.staff.some(s => MP.normContact(s.contact) === key)) return res.status(403).json({ error: 'This contact is not a registered hospital staff account.' });
-  if (role === 'patient' && !db.cases.some(c => MP.normContact(c.contact) === key)) return res.status(403).json({ error: 'No admission found for this contact. Ask the hospital billing desk to register you first.' });
-  issueOtp(role + ':' + key); res.json({ ok: true });
+  if (role === 'patient' && registering && db.patients.some(p => MP.normContact(p.contact) === key)) return res.status(409).json({ error: 'A patient login already exists for this contact. Sign in instead.' });
+  if (role === 'patient' && !registering && !db.patients.some(p => MP.normContact(p.contact) === key) && !db.cases.some(c => MP.normContact(c.contact) === key)) return res.status(403).json({ error: 'No patient login found for this contact. Create one first.' });
+  issueOtp((registering ? 'patient-register:' : role + ':') + key); res.json({ ok: true });
 });
 app.post('/api/auth/:role/verify', (req, res) => {
-  const { role } = req.params, key = MP.normContact(req.body.contact);
+  const { role } = req.params, key = MP.normContact(req.body.contact), registering = role === 'patient' && req.body.register === true;
   if (!['staff', 'patient'].includes(role)) return res.status(404).end();
-  const err = checkOtp(role + ':' + key, req.body.otp); if (err) return res.status(400).json({ error: err });
+  if (!validContact(key)) return res.status(400).json({ error: 'Enter a valid email or 10-digit mobile number.' });
+  if (registering && !String(req.body.name || '').trim()) return res.status(400).json({ error: 'Enter your full name to create a patient login.' });
+  const err = checkOtp((registering ? 'patient-register:' : role + ':') + key, req.body.otp); if (err) return res.status(400).json({ error: err });
   let name = '';
   if (role === 'staff') {
     let s = db.staff.find(x => MP.normContact(x.contact) === key);
     if (!s) { if (db.staff.length) return res.status(403).json({ error: 'Not registered.' }); s = { id: crypto.randomUUID().slice(0, 8), name: 'Hospital Admin', designation: 'Administrator (first sign-in)', contact: String(req.body.contact).trim() }; db.staff.push(s); save(); }
     name = s.name;
+  } else {
+    let patient = db.patients.find(p => MP.normContact(p.contact) === key);
+    if (registering) {
+      if (patient) return res.status(409).json({ error: 'A patient login already exists for this contact. Sign in instead.' });
+      patient = ensurePatient(req.body.name, req.body.contact);
+      save();
+    } else if (!patient) {
+      const admission = db.cases.find(c => MP.normContact(c.contact) === key);
+      if (!admission) return res.status(403).json({ error: 'No patient login found for this contact. Create one first.' });
+      patient = ensurePatient(admission.name, admission.contact);
+      save();
+    }
+    name = patient.name;
   }
   const token = crypto.randomBytes(24).toString('hex'); sessions.set(token, { role, contact: key, name });
   res.setHeader('Set-Cookie', `${role}_sid=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=28800`);
@@ -107,6 +140,7 @@ const findStaffCase = (req, res, next) => { req.c = db.cases.find(x => x.id === 
 const HOSPITAL = ['name', 'contact', 'uhid', 'claimId', 'bed', 'domain', 'customDomain'];
 staff.get('/cases', (req, res) => res.json(db.cases));
 staff.get('/staff', (req, res) => res.json(db.staff));
+staff.get('/patients', (req, res) => res.json(db.patients));
 staff.post('/staff', (req, res) => {
   const { name, designation, contact } = req.body, key = MP.normContact(contact);
   if (!String(name || '').trim() || !validContact(key)) return res.status(400).json({ error: 'Enter the staff name and a valid email / 10-digit mobile.' });
@@ -122,7 +156,7 @@ staff.delete('/staff/:id', (req, res) => {
 staff.post('/cases', (req, res) => {
   const b = pick(req.body, HOSPITAL);
   if (!String(b.name || '').trim() || !validContact(MP.normContact(b.contact))) return res.status(400).json({ error: 'Patient name and a valid mobile / email (used for patient sign-in) are required.' });
-  const c = MP.blankCase({ id: crypto.randomUUID().slice(0, 8), createdAt: Date.now(), ...b }); db.cases.push(c); save(); res.status(201).json(c);
+  const c = MP.blankCase({ id: crypto.randomUUID().slice(0, 8), createdAt: Date.now(), ...b }); db.cases.push(c); ensurePatient(c.name, c.contact); save(); res.status(201).json(c);
 });
 staff.put('/cases/:id', findStaffCase, (req, res) => {
   const locked = req.c.status !== 'registered';
@@ -166,8 +200,9 @@ patient.post('/cases/:id/esign/confirm', findOwn, (req, res) => {
   const err = checkOtp('esign:' + req.c.id + ':' + req.user.contact, req.body.otp); if (err) return res.status(400).json({ error: err });
   req.c.status = 'disbursed'; req.c.disbursedAt = Date.now(); save(); res.json(req.c);
 });
+app.use('/api/patient', patient);
 if (!process.env.VERCEL) {
-  const PORT = process.env.PORT || 3006;
+  const PORT = process.env.PORT || 3008;
   app.listen(PORT, () => {
     console.log(`MedPay Instant running at http://localhost:${PORT}`);
     console.log(`  Staff portal:   http://localhost:${PORT}/staff/`);

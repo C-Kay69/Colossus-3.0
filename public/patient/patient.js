@@ -4,15 +4,28 @@ const cur = () => P.cases.find(c => c.id === P.id);
 document.body.insertAdjacentHTML('beforeend', DOC_MODAL);
 $('docModal').addEventListener('click', e => e.target === $('docModal') && closeDoc());
 
-const login = mountLogin({ role: 'patient', title: 'Leave the hospital now. Settle the insurance gap in minutes.', blurb: 'Verify your KYC, review your bill gap, choose a plan and collect your gate pass. Your hospital desk must register you before you can sign in.',
+const login = mountLogin({ role: 'patient', title: 'Leave the hospital now. Settle the insurance gap in minutes.', blurb: 'Create a patient login with your mobile or email, then verify your KYC, review your bill gap, choose a plan and collect your gate pass.',
   side: 'bg-gradient-to-br from-[#0e7c6b] to-[#063f36]', placeholder: 'registered mobile or email', onSuccess: r => start(r) });
 window.onSignedOut = () => signOut(true);
 async function signOut(silent) { try { await api('/api/auth/patient/logout', jsonOpts('POST')); } catch (_) {} P.cases = []; P.id = null; $('page').innerHTML = ''; login.show(); if (!silent) toast('Signed out'); }
 async function start(user) {
-  P.user = user; await load(); if (!P.cases.length) return toast('No admission found for this account.', true);
+  P.user = user; await load(); if (!P.cases.length) return renderNoAdmission();
   P.id = P.cases[0].id; setTab(initialTab());
 }
 const load = () => api('/api/patient/cases').then(r => (P.cases = r.map(MP.normalize))).catch(fail);
+function renderNoAdmission() {
+  $('banner').innerHTML = `<div><p class="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Patient login</p><p class="text-base font-bold">${esc(P.user.name || 'Patient')}</p><p class="text-xs text-stone-500">${esc(P.user.contact)}</p></div>`;
+  $('gate').classList.add('hidden');
+  $('page').innerHTML = `<div class="card space-y-3"><h2 class="text-lg font-bold">Your patient login is ready</h2><p class="text-sm text-stone-600">There is no hospital admission linked to this contact yet. Once the hospital adds your admission using <b>${esc(P.user.contact)}</b>, it will appear here automatically.</p><button class="btn" onclick="refreshAdmission(true)">Check for admission</button></div>`;
+  $('tracker').classList.add('hidden');
+}
+async function refreshAdmission(showMessage) {
+  try {
+    P.cases = (await api('/api/patient/cases')).map(MP.normalize);
+    if (P.cases.length) { P.id = P.cases[0].id; $('tracker').classList.remove('hidden'); setTab(initialTab()); }
+    else if (showMessage) toast('No admission is linked to this contact yet.', true);
+  } catch (e) { fail(e); }
+}
 api('/api/auth/patient/me').then(start).catch(() => login.show());
 
 // ---------- navigation & gating ----------
@@ -137,13 +150,20 @@ async function confirmEsign() {
 
 // ---------- tracker, SLA timer & live sync ----------
 function renderTracker(c) {
+  $('tracker').classList.remove('hidden');
   const s = MP.steps(c), names = ['Hospital & TPA Bill Synced', 'Full Credit Verification', 'Gap Financing Selection', 'Hospital Settlement'], subs = ['Hospital publishes bill & TPA letter', 'Mandatory first step for patient', 'Unlocks after Step 1', 'Gate pass after bed release'];
   $('tracker').innerHTML = `<div class="flex items-center justify-between mb-4"><h3 class="text-xs font-bold uppercase tracking-wider text-stone-500">Live Discharge &amp; RBI Underwriting Progress</h3><span class="text-xs font-semibold ${s.cur < 0 ? 'text-emerald-700' : 'text-amber-700'}">${s.cur < 0 ? 'Discharged • Gate pass active' : `Step ${s.cur + 1} of 4 • ${names[s.cur]}`}</span></div>
     <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">${names.map((n, i) => { const d = s.done[i], now = i === s.cur; return `<div class="flex items-start gap-3"><div class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 text-white ${d ? 'bg-emerald-600' : now ? 'bg-amber-500 animate-pulse' : 'bg-stone-300 text-stone-600'}">${d ? '✓' : i + 1}</div><div><p class="text-xs font-bold ${d || now ? '' : 'text-stone-400'}">${i + 1}. ${n}</p><p class="text-[11px] ${d ? 'text-emerald-600' : now ? 'text-amber-600' : 'text-stone-400'}">${d ? 'Completed' : subs[i]}</p></div></div>`; }).join('')}</div>`;
 }
 setInterval(() => { const c = cur(); if (!c) return ($('liveTimer').textContent = '--:--'); const s = Math.floor(((c.dischargedAt || Date.now()) - c.createdAt) / 1000); $('liveTimer').textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; }, 1000);
 setInterval(async () => {   // pick up hospital changes (bill published, bed released) without clobbering typing
-  const c = cur(); if (!c || $('authOverlay').children.length && !$('authOverlay').classList.contains('hidden')) return;
+  const c = cur();
+  if (!c) {
+    if (P.user && !$('authOverlay').classList.contains('hidden')) return;
+    if (P.user) await refreshAdmission(false);
+    return;
+  }
+  if ($('authOverlay').children.length && !$('authOverlay').classList.contains('hidden')) return;
   try {
     const n = (await api('/api/patient/cases')).map(MP.normalize).find(x => x.id === c.id); if (!n) return;
     const changedStatus = n.status !== c.status, hospital = JSON.stringify([n.bill, n.files.tpa, n.files.bill, n.domain, n.bed, n.claimId]) !== JSON.stringify([c.bill, c.files.tpa, c.files.bill, c.domain, c.bed, c.claimId]);

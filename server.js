@@ -170,11 +170,12 @@ app.use('/api/patient', patient);
 
 app.use((err, req, res, next) => res.status(400).json({ error: err.message }));
 {PORT}\n  Staff portal:   http://localhost:${PORT}/staff/\n  Patient portal: http://localhost:${PORT}/patient/`));
-// Keep local development working with npm start
-if (process.env.NODE_ENV !== 'production') {
+if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 3006;
   app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
+    console.log(`MedPay Instant running at http://localhost:${PORT}`);
+    console.log(`  Staff portal:   http://localhost:${PORT}/staff/`);
+    console.log(`  Patient portal: http://localhost:${PORT}/patient/`);
   });
 }
 
